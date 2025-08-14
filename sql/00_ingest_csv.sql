@@ -3,72 +3,85 @@
 -- =====================================================
 -- Load NYC Taxi and Limousine Commission data from CSV files
 -- This script handles both Yellow and Green taxi trip records
--- Optimized for Lightning SQL execution
+-- Uses Lightning SQL FILESTORE TABLE syntax
 
 -- Set database context
 USE nw_taxi;
 
 -- =====================================================
--- 1. LOAD TAXI ZONES LOOKUP DATA
+-- 1. CREATE LIGHTNING FILESTORE TABLES
 -- =====================================================
 
--- Load taxi zones from CSV (official NYC TLC zone lookup)
+-- Create Lightning Filestore table for taxi zones lookup
 -- Download: https://d37ci6vzurychx.cloudfront.net/misc/taxi+_zone_lookup.csv
-CREATE OR REPLACE TEMPORARY VIEW taxi_zones_csv
-USING CSV
-OPTIONS (
-    path '/path/to/data/taxi_zone_lookup.csv',
-    header 'true',
-    inferSchema 'true'
+CREATE LIGHTNING FILESTORE TABLE taxi_zones_filestore FROM NY_TAXI_ZONES_CSV FORMAT csv OPTIONS (
+    awsAccessKeyId "YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey "YOUR_AWS_SECRET_ACCESS_KEY",
+    path "s3a://your-bucket/nyc-taxi-data/taxi_zone_lookup/",
+    Header "true",
+    inferSchema  "true"
 );
 
--- Insert taxi zones with proper formatting
+-- Create Lightning Filestore table for yellow taxi trip data
+-- Format: https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
+CREATE LIGHTNING FILESTORE TABLE yellow_taxi_filestore FROM NY_YELLOW_TAXI_CSV FORMAT csv OPTIONS (
+    awsAccessKeyId "YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey "YOUR_AWS_SECRET_ACCESS_KEY",
+    path "s3a://your-bucket/nyc-taxi-data/yellow_tripdata/",
+    Header "true",
+    inferSchema  "true"
+);
+
+-- Create Lightning Filestore table for green taxi trip data
+-- Format: https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
+CREATE LIGHTNING FILESTORE TABLE green_taxi_filestore FROM NY_GREEN_TAXI_CSV FORMAT csv OPTIONS (
+    awsAccessKeyId "YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey "YOUR_AWS_SECRET_ACCESS_KEY",
+    path "s3a://your-bucket/nyc-taxi-data/green_tripdata/",
+    Header "true",
+    inferSchema  "true"
+);
+
+-- =====================================================
+-- 2. LOAD TAXI ZONES LOOKUP DATA
+-- =====================================================
+
+-- Insert taxi zones from Lightning Filestore table
 INSERT INTO nw_taxi.taxi_zones 
 SELECT 
-    LocationID                AS location_id,
-    Borough                   AS borough,
-    Zone                      AS zone,
-    service_zone              AS service_zone,
-    current_timestamp()       AS created_at
-FROM taxi_zones_csv;
+    LocationID            AS location_id,
+    Borough               AS borough,
+    Zone                  AS zone,
+    service_zone          AS service_zone,
+    current_timestamp()   AS created_at
+FROM taxi_zones_filestore;
 
 -- =====================================================
--- 2. LOAD YELLOW TAXI TRIP DATA
+-- 3. LOAD YELLOW TAXI TRIP DATA
 -- =====================================================
 
--- Create temporary view for Yellow taxi CSV data
--- Format: https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
-CREATE OR REPLACE TEMPORARY VIEW yellow_taxi_raw
-USING CSV
-OPTIONS (
-    path '/path/to/data/yellow_tripdata_*.csv',
-    header 'true',
-    inferSchema 'true',
-    timestampFormat 'yyyy-MM-dd HH:mm:ss'
-);
-
--- Insert Yellow taxi trips with computed fields
+-- Insert Yellow taxi trips with computed fields from Lightning Filestore
 INSERT INTO nw_taxi.taxi_trips 
 SELECT 
     -- Primary key generation
-    monotonically_increasing_id()                                           AS trip_id,
+    monotonically_increasing_id()                               AS trip_id,
     
     -- Trip identification
-    'yellow'                                                                AS trip_type,
-    VendorID                                                                AS vendor_id,
+    'yellow'                                                    AS trip_type,
+    VendorID                                                    AS vendor_id,
     
     -- Pickup information
-    tpep_pickup_datetime                                                    AS pickup_datetime,
-    PULocationID                                                            AS pickup_location_id,
+    tpep_pickup_datetime                                        AS pickup_datetime,
+    PULocationID                                                AS pickup_location_id,
     
     -- Dropoff information  
-    tpep_dropoff_datetime                                                   AS dropoff_datetime,
-    DOLocationID                                                            AS dropoff_location_id,
+    tpep_dropoff_datetime                                       AS dropoff_datetime,
+    DOLocationID                                                AS dropoff_location_id,
     
     -- Trip details
     passenger_count,
     trip_distance,
-    RatecodeID                                                              AS rate_code_id,
+    RatecodeID                                                  AS rate_code_id,
     store_and_fwd_flag,
     
     -- Pricing breakdown
@@ -80,23 +93,23 @@ SELECT
     improvement_surcharge,
     congestion_surcharge,
     airport_fee,
-    0.0                                                                     AS ehail_fee,
+    0.0                                                         AS ehail_fee,
     total_amount,
     
     -- Payment information
     payment_type,
     
     -- Computed time fields
-    hour(tpep_pickup_datetime)                                              AS pickup_hour,
-    dayofweek(tpep_pickup_datetime)                                         AS pickup_day_of_week,
-    month(tpep_pickup_datetime)                                             AS pickup_month,
-    year(tpep_pickup_datetime)                                              AS pickup_year,
-    date(tpep_pickup_datetime)                                              AS pickup_date,
-    dayofweek(tpep_pickup_datetime) IN (1, 7)                               AS is_weekend,
+    hour(tpep_pickup_datetime)                                  AS pickup_hour,
+    dayofweek(tpep_pickup_datetime)                             AS pickup_day_of_week,
+    month(tpep_pickup_datetime)                                 AS pickup_month,
+    year(tpep_pickup_datetime)                                  AS pickup_year,
+    date(tpep_pickup_datetime)                                  AS pickup_date,
+    dayofweek(tpep_pickup_datetime) IN (1, 7)                   AS is_weekend,
     
     -- Computed trip metrics
     (unix_timestamp(tpep_dropoff_datetime) - 
-     unix_timestamp(tpep_pickup_datetime)) / 60.0                          AS trip_duration_minutes,
+     unix_timestamp(tpep_pickup_datetime)) / 60.0              AS trip_duration_minutes,
      
     CASE 
         WHEN (unix_timestamp(tpep_dropoff_datetime) - 
@@ -105,19 +118,19 @@ SELECT
              (unix_timestamp(tpep_dropoff_datetime) - 
               unix_timestamp(tpep_pickup_datetime))
         ELSE NULL
-    END                                                                     AS trip_speed_mph,
+    END                                                         AS trip_speed_mph,
     
     CASE 
         WHEN trip_distance > 0 
         THEN fare_amount / trip_distance
         ELSE NULL
-    END                                                                     AS fare_per_mile,
+    END                                                         AS fare_per_mile,
     
     CASE 
         WHEN fare_amount > 0 
         THEN (tip_amount / fare_amount) * 100
         ELSE 0
-    END                                                                     AS tip_percentage,
+    END                                                         AS tip_percentage,
     
     -- Data quality validation
     (tpep_pickup_datetime < tpep_dropoff_datetime
@@ -128,51 +141,40 @@ SELECT
         AND passenger_count > 0
         AND passenger_count <= 6
         AND PULocationID IS NOT NULL
-        AND DOLocationID IS NOT NULL)                                       AS is_valid_trip,
+        AND DOLocationID IS NOT NULL)                           AS is_valid_trip,
     
-    current_timestamp()                                                     AS created_at
+    current_timestamp()                                         AS created_at
     
-FROM yellow_taxi_raw
+FROM yellow_taxi_filestore
 WHERE tpep_pickup_datetime IS NOT NULL
   AND tpep_dropoff_datetime IS NOT NULL;
 
 -- =====================================================
--- 3. LOAD GREEN TAXI TRIP DATA
+-- 4. LOAD GREEN TAXI TRIP DATA
 -- =====================================================
 
--- Create temporary view for Green taxi CSV data
--- Format: https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
-CREATE OR REPLACE TEMPORARY VIEW green_taxi_raw
-USING CSV
-OPTIONS (
-    path '/path/to/data/green_tripdata_*.csv',
-    header 'true',
-    inferSchema 'true',
-    timestampFormat 'yyyy-MM-dd HH:mm:ss'
-);
-
--- Insert Green taxi trips with computed fields
+-- Insert Green taxi trips with computed fields from Lightning Filestore
 INSERT INTO nw_taxi.taxi_trips 
 SELECT 
     -- Primary key generation with offset
-    monotonically_increasing_id() + 1000000000                              AS trip_id,
+    monotonically_increasing_id() + 1000000000                  AS trip_id,
     
     -- Trip identification
-    'green'                                                                 AS trip_type,
-    VendorID                                                                AS vendor_id,
+    'green'                                                     AS trip_type,
+    VendorID                                                    AS vendor_id,
     
     -- Pickup information
-    lpep_pickup_datetime                                                    AS pickup_datetime,
-    PULocationID                                                            AS pickup_location_id,
+    lpep_pickup_datetime                                        AS pickup_datetime,
+    PULocationID                                                AS pickup_location_id,
     
     -- Dropoff information
-    lpep_dropoff_datetime                                                   AS dropoff_datetime,
-    DOLocationID                                                            AS dropoff_location_id,
+    lpep_dropoff_datetime                                       AS dropoff_datetime,
+    DOLocationID                                                AS dropoff_location_id,
     
     -- Trip details
     passenger_count,
     trip_distance,
-    RatecodeID                                                              AS rate_code_id,
+    RatecodeID                                                  AS rate_code_id,
     store_and_fwd_flag,
     
     -- Pricing breakdown
@@ -183,7 +185,7 @@ SELECT
     tolls_amount,
     improvement_surcharge,
     congestion_surcharge,
-    0.0                                                                     AS airport_fee,
+    0.0                                                         AS airport_fee,
     ehail_fee,
     total_amount,
     
@@ -191,16 +193,16 @@ SELECT
     payment_type,
     
     -- Computed time fields
-    hour(lpep_pickup_datetime)                                              AS pickup_hour,
-    dayofweek(lpep_pickup_datetime)                                         AS pickup_day_of_week,
-    month(lpep_pickup_datetime)                                             AS pickup_month,
-    year(lpep_pickup_datetime)                                              AS pickup_year,
-    date(lpep_pickup_datetime)                                              AS pickup_date,
-    dayofweek(lpep_pickup_datetime) IN (1, 7)                               AS is_weekend,
+    hour(lpep_pickup_datetime)                                  AS pickup_hour,
+    dayofweek(lpep_pickup_datetime)                             AS pickup_day_of_week,
+    month(lpep_pickup_datetime)                                 AS pickup_month,
+    year(lpep_pickup_datetime)                                  AS pickup_year,
+    date(lpep_pickup_datetime)                                  AS pickup_date,
+    dayofweek(lpep_pickup_datetime) IN (1, 7)                   AS is_weekend,
     
     -- Computed trip metrics
     (unix_timestamp(lpep_dropoff_datetime) - 
-     unix_timestamp(lpep_pickup_datetime)) / 60.0                          AS trip_duration_minutes,
+     unix_timestamp(lpep_pickup_datetime)) / 60.0              AS trip_duration_minutes,
      
     CASE 
         WHEN (unix_timestamp(lpep_dropoff_datetime) - 
@@ -209,19 +211,19 @@ SELECT
              (unix_timestamp(lpep_dropoff_datetime) - 
               unix_timestamp(lpep_pickup_datetime))
         ELSE NULL
-    END                                                                     AS trip_speed_mph,
+    END                                                         AS trip_speed_mph,
     
     CASE 
         WHEN trip_distance > 0 
         THEN fare_amount / trip_distance
         ELSE NULL
-    END                                                                     AS fare_per_mile,
+    END                                                         AS fare_per_mile,
     
     CASE 
         WHEN fare_amount > 0 
         THEN (tip_amount / fare_amount) * 100
         ELSE 0
-    END                                                                     AS tip_percentage,
+    END                                                         AS tip_percentage,
     
     -- Data quality validation
     (lpep_pickup_datetime < lpep_dropoff_datetime
@@ -232,59 +234,59 @@ SELECT
         AND passenger_count > 0
         AND passenger_count <= 6
         AND PULocationID IS NOT NULL
-        AND DOLocationID IS NOT NULL)                                       AS is_valid_trip,
+        AND DOLocationID IS NOT NULL)                           AS is_valid_trip,
     
-    current_timestamp()                                                     AS created_at
+    current_timestamp()                                         AS created_at
     
-FROM green_taxi_raw
+FROM green_taxi_filestore
 WHERE lpep_pickup_datetime IS NOT NULL
   AND lpep_dropoff_datetime IS NOT NULL;
 
 -- =====================================================
--- 4. DATA VALIDATION AND SUMMARY
+-- 5. DATA VALIDATION AND SUMMARY
 -- =====================================================
 
 -- Validate data ingestion results
 SELECT 
-    'Data Ingestion Summary'                                            AS metric,
-    COUNT(*)                                                            AS total_records,
-    SUM(CASE WHEN trip_type = 'yellow' THEN 1 ELSE 0 END)              AS yellow_trips,
-    SUM(CASE WHEN trip_type = 'green' THEN 1 ELSE 0 END)               AS green_trips,
-    SUM(CASE WHEN is_valid_trip = true THEN 1 ELSE 0 END)              AS valid_trips,
-    SUM(CASE WHEN is_valid_trip = false THEN 1 ELSE 0 END)             AS invalid_trips,
+    'Data Ingestion Summary'                                    AS metric,
+    COUNT(*)                                                    AS total_records,
+    SUM(CASE WHEN trip_type = 'yellow' THEN 1 ELSE 0 END)      AS yellow_trips,
+    SUM(CASE WHEN trip_type = 'green' THEN 1 ELSE 0 END)       AS green_trips,
+    SUM(CASE WHEN is_valid_trip = true THEN 1 ELSE 0 END)      AS valid_trips,
+    SUM(CASE WHEN is_valid_trip = false THEN 1 ELSE 0 END)     AS invalid_trips,
     ROUND(
         SUM(CASE WHEN is_valid_trip = true THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2
-    )                                                                   AS valid_percentage
+    )                                                           AS valid_percentage
 FROM nw_taxi.taxi_trips;
 
 -- Check date range of ingested data
 SELECT 
-    'Date Range Coverage'                                               AS metric,
+    'Date Range Coverage'                                       AS metric,
     trip_type,
-    MIN(pickup_date)                                                    AS earliest_date,
-    MAX(pickup_date)                                                    AS latest_date,
-    COUNT(DISTINCT pickup_date)                                         AS unique_dates
+    MIN(pickup_date)                                            AS earliest_date,
+    MAX(pickup_date)                                            AS latest_date,
+    COUNT(DISTINCT pickup_date)                                 AS unique_dates
 FROM nw_taxi.taxi_trips
 GROUP BY trip_type
 ORDER BY trip_type;
 
 -- Validate zone references
 SELECT 
-    'Zone Reference Validation'                                         AS metric,
+    'Zone Reference Validation'                                 AS metric,
     SUM(
         CASE WHEN pickup_location_id NOT IN 
             (SELECT location_id FROM nw_taxi.taxi_zones) 
         THEN 1 ELSE 0 END
-    )                                                                   AS invalid_pickup_zones,
+    )                                                           AS invalid_pickup_zones,
     SUM(
         CASE WHEN dropoff_location_id NOT IN 
             (SELECT location_id FROM nw_taxi.taxi_zones) 
         THEN 1 ELSE 0 END
-    )                                                                   AS invalid_dropoff_zones
+    )                                                           AS invalid_dropoff_zones
 FROM nw_taxi.taxi_trips;
 
 -- =====================================================
--- 5. POST-INGESTION OPTIMIZATION
+-- 6. POST-INGESTION OPTIMIZATION
 -- =====================================================
 
 -- Update table statistics for optimal query planning
@@ -299,66 +301,90 @@ OPTIMIZE nw_taxi.taxi_zones;
 CACHE TABLE nw_taxi.valid_trips;
 CACHE TABLE nw_taxi.trips_with_zones;
 
+-- Clean up temporary Lightning Filestore tables (optional)
+-- DROP TABLE IF EXISTS taxi_zones_filestore;
+-- DROP TABLE IF EXISTS yellow_taxi_filestore;
+-- DROP TABLE IF EXISTS green_taxi_filestore;
+
 -- =====================================================
--- 6. LIGHTNING SQL USAGE INSTRUCTIONS
+-- 7. LIGHTNING SQL USAGE INSTRUCTIONS
 -- =====================================================
 
 /*
 =====================================================
-LIGHTNING SQL USAGE INSTRUCTIONS
+LIGHTNING SQL FILESTORE USAGE INSTRUCTIONS
 =====================================================
 
-1. DATA PREPARATION:
-   - Download NYC TLC Zone Lookup:
-     https://d37ci6vzurychx.cloudfront.net/misc/taxi+_zone_lookup.csv
-   
-   - Download NYC TLC Trip Data:
-     https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
-     (Both Yellow and Green taxi datasets)
+1. PREREQUISITE SETUP:
+   - Ensure AWS S3 bucket contains NYC TLC data files
+   - Update AWS credentials in the CREATE LIGHTNING FILESTORE TABLE statements
+   - Verify S3 bucket paths match your data organization
 
-2. FILE PATH CONFIGURATION:
-   - Update '/path/to/data/' with your actual data directory
-   - Ensure CSV file patterns match your downloaded files:
-     * taxi_zone_lookup.csv
-     * yellow_tripdata_*.csv  
-     * green_tripdata_*.csv
+2. S3 DATA STRUCTURE:
+   your-bucket/nyc-taxi-data/
+   ├── taxi_zone_lookup/
+   │   └── taxi_zone_lookup.csv
+   ├── yellow_tripdata/
+   │   ├── yellow_tripdata_2023-01.csv
+   │   ├── yellow_tripdata_2023-02.csv
+   │   └── ...
+   └── green_tripdata/
+       ├── green_tripdata_2023-01.csv
+       ├── green_tripdata_2023-02.csv
+       └── ...
 
-3. EXECUTION SEQUENCE:
-   ① Run: 01_nyc_tlc_schema_spark.sql (create tables)
-   ② Run: 00_ingest_csv.sql (this file - load data)
+3. CONFIGURATION STEPS:
+   - Replace "YOUR_AWS_ACCESS_KEY_ID" with your actual AWS Access Key ID
+   - Replace "YOUR_AWS_SECRET_ACCESS_KEY" with your actual AWS Secret Access Key
+   - Update S3 bucket paths to match your data location
+   - Modify data source names (NY_TAXI_ZONES_CSV, etc.) as needed
+
+4. EXECUTION SEQUENCE:
+   ① Run: 01_nyc_tlc_schema_spark.sql (create target tables)
+   ② Run: 00_ingest_csv.sql (this file - create filestore tables and load data)
    ③ Run: 02_nyc_analytics_queries_spark.sql (analytics)
 
-4. LIGHTNING SQL EXECUTION:
+5. LIGHTNING SQL EXECUTION:
    
    # Using Lightning SQL CLI
    lightning-sql -f 00_ingest_csv.sql
    
-   # Using Spark SQL with Lightning optimization
-   spark-sql \
-     --master local[*] \
-     --conf spark.sql.adaptive.enabled=true \
-     --conf spark.sql.adaptive.coalescePartitions.enabled=true \
-     --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+   # Using Lightning SQL with custom configuration
+   lightning-sql \
+     --conf lightning.sql.adaptive.enabled=true \
+     --conf lightning.sql.adaptive.coalescePartitions.enabled=true \
      -f 00_ingest_csv.sql
 
-5. PERFORMANCE OPTIMIZATION:
-   - Batch processing: Load data in monthly chunks for large datasets
-   - Memory settings: Increase executor memory for large CSV files
-   - Partitioning: Data is auto-partitioned by pickup_year/pickup_month
-   - Caching: Frequently used views are automatically cached
+6. SECURITY CONSIDERATIONS:
+   - Store AWS credentials securely (use IAM roles when possible)
+   - Ensure S3 bucket has appropriate access permissions
+   - Consider using temporary credentials for enhanced security
 
-6. MONITORING & VALIDATION:
-   - Check Spark UI for ingestion progress
-   - Review data quality validation output
-   - Monitor invalid record counts and percentages
+7. PERFORMANCE OPTIMIZATION:
+   - Partition S3 data by year/month for faster queries
+   - Use appropriate S3 storage classes for cost optimization
+   - Consider data compression formats (gzip, parquet) for large datasets
+   - Lightning Filestore automatically handles data caching and optimization
 
-7. ALTERNATIVE DATA SOURCES:
-   - Testing: scripts/download_nyc_data.py (auto-download samples)
-   - Development: scripts/generate_sample_data.py (synthetic data)
+8. MONITORING & VALIDATION:
+   - Monitor Lightning SQL execution logs for any S3 access issues
+   - Verify data quality validation output after ingestion
+   - Check that all expected files are processed from S3
 
-8. TROUBLESHOOTING:
-   - Ensure sufficient memory allocation
-   - Verify CSV file formats match NYC TLC specifications
-   - Check that all required columns are present in source files
+9. ALTERNATIVE CONFIGURATIONS:
+   - Local file paths: Use file:// protocol for local testing
+   - HDFS paths: Use hdfs:// protocol for Hadoop environments
+   - Other cloud storage: Adapt for Azure Blob Storage or GCS
+
+10. TROUBLESHOOTING:
+    - Verify AWS credentials and S3 bucket permissions
+    - Check S3 path formats and file availability
+    - Ensure CSV file formats match NYC TLC specifications
+    - Monitor network connectivity to S3
+
+EXAMPLE AWS S3 SETUP:
+aws s3 cp taxi_zone_lookup.csv s3://your-bucket/nyc-taxi-data/taxi_zone_lookup/
+aws s3 cp yellow_tripdata_*.csv s3://your-bucket/nyc-taxi-data/yellow_tripdata/
+aws s3 cp green_tripdata_*.csv s3://your-bucket/nyc-taxi-data/green_tripdata/
 
 */
