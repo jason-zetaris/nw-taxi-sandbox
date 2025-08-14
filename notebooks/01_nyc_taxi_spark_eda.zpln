@@ -1,0 +1,668 @@
+{
+  "paragraphs": [
+    {
+      "text": "%md\n# NYC Taxi Data Analysis with PySpark\n\nThis notebook provides comprehensive big data analysis of NYC TLC Trip Record Data using **Apache Spark**.\n\n**Data Source**: [NYC Taxi and Limousine Commission](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)\n\n**Technologies Used**:\n- **PySpark**: Distributed data processing\n- **Spark SQL**: Large-scale SQL analytics\n- **MLlib**: Machine learning at scale\n\n**Analysis Includes**:\n- Scalable data processing and ETL\n- Distributed analytics and aggregations\n- Advanced SQL queries on big data\n- Performance optimization techniques",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_1",
+      "id": "paragraph_1",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Import required libraries\nimport sys\nimport os\nsys.path.append('../scripts')\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql.functions import *\nfrom pyspark.sql.types import *\nfrom pyspark.sql.window import Window\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport pandas as pd\nimport numpy as np\nfrom datetime import datetime, timedelta\n\n# Import our Spark setup utilities\nfrom spark_setup import (\n    create_spark_session,\n    configure_spark_for_taxi_data,\n    print_spark_ui_info,\n    cache_dataframe,\n    create_temp_views\n)\n\n# Configure matplotlib\nplt.style.use('seaborn-v0_8-whitegrid')\nsns.set_palette('viridis')\n\nprint(\"🚀 NYC Taxi Big Data Analysis with PySpark\")\nprint(\"=\" * 60)",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_2",
+      "id": "paragraph_2",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Initialize Spark Session\nprint(\"🔧 Initializing Spark Session...\")\n\n# Create Spark session with optimized configuration\nspark = create_spark_session(\n    app_name=\"NYC_Taxi_Analytics\",\n    memory=\"6g\",  # Adjust based on your system\n    cores=\"*\"\n)\n\n# Configure for taxi data analysis\nconfigure_spark_for_taxi_data(spark)\n\n# Print Spark UI information\nprint_spark_ui_info(spark)\n\nprint(\"\\n✅ Spark initialization complete!\")",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_3",
+      "id": "paragraph_3",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 1. Data Loading and Initial Processing",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_4",
+      "id": "paragraph_4",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Access NYC TLC data from Spark tables with nw_taxi namespace\nprint(\"📂 Accessing NYC TLC Trip Data from Spark Tables...\")\n\n# Check available tables in Spark catalog\ntry:\n    available_tables = spark.sql(\"SHOW TABLES\").collect()\n    print(\"Available Spark tables:\")\n    for table in available_tables:\n        print(f\"  - {table.tableName}\")\nexcept Exception as e:\n    print(f\"Note: {e}\")\n    print(\"Checking for default database tables...\")\n\n# Try to access trip data from Spark table with namespace\ntry:\n    print(\"\\nAccessing trip data from Spark table...\")\n    trips_df = spark.sql(\"SELECT * FROM nw_taxi.trips\")\n    trip_count = spark.sql(\"SELECT COUNT(*) as count FROM nw_taxi.trips\").collect()[0]['count']\n    print(f\"✅ Accessed trip data: {trip_count:,} trips\")\nexcept Exception as e:\n    print(f\"❌ Could not access 'nw_taxi.trips' table: {e}\")\n    print(\"Creating temporary table from sample data...\")\n    # Fallback: create sample data if table doesn't exist\n    from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, TimestampType\n    sample_schema = StructType([\n        StructField(\"trip_id\", IntegerType(), True),\n        StructField(\"trip_type\", StringType(), True),\n        StructField(\"pickup_datetime\", TimestampType(), True),\n        StructField(\"dropoff_datetime\", TimestampType(), True),\n        StructField(\"pickup_location_id\", IntegerType(), True),\n        StructField(\"dropoff_location_id\", IntegerType(), True),\n        StructField(\"fare_amount\", DoubleType(), True),\n        StructField(\"total_amount\", DoubleType(), True),\n        StructField(\"tip_amount\", DoubleType(), True),\n        StructField(\"trip_distance\", DoubleType(), True),\n        StructField(\"payment_type\", IntegerType(), True)\n    ])\n    trips_df = spark.createDataFrame([], sample_schema)\n    trips_df.createGlobalTempView(\"nw_taxi.trips\")\n    trip_count = 0\n\n# Try to access zone lookup data from Spark table with namespace\ntry:\n    print(\"Accessing zone lookup data from Spark table...\")\n    zones_df = spark.sql(\"SELECT * FROM nw_taxi.zones\")\n    zone_count = spark.sql(\"SELECT COUNT(*) as count FROM nw_taxi.zones\").collect()[0]['count']\n    print(f\"✅ Accessed zone data: {zone_count:,} zones\")\nexcept Exception as e:\n    print(f\"❌ Could not access 'nw_taxi.zones' table: {e}\")\n    print(\"Creating temporary zones table...\")\n    # Fallback: create sample zones if table doesn't exist\n    from pyspark.sql.types import StructType, StructField, StringType, IntegerType\n    zones_schema = StructType([\n        StructField(\"location_id\", IntegerType(), True),\n        StructField(\"Borough\", StringType(), True),\n        StructField(\"Zone\", StringType(), True),\n        StructField(\"service_zone\", StringType(), True)\n    ])\n    zones_df = spark.createDataFrame([], zones_schema)\n    zones_df.createGlobalTempView(\"nw_taxi.zones\")\n    zone_count = 0\n\n# Alternative: Check if data exists in different table names with namespace\nif trip_count == 0:\n    print(\"\\n🔍 Searching for alternative table names...\")\n    alternative_tables = ['nw_taxi.taxi_trips', 'nw_taxi.nyc_trips', 'nw_taxi.trip_data', 'nw_taxi.yellow_trips', 'nw_taxi.green_trips']\n    \n    for table_name in alternative_tables:\n        try:\n            test_df = spark.sql(f\"SELECT COUNT(*) as count FROM {table_name}\")\n            count = test_df.collect()[0]['count']\n            if count > 0:\n                print(f\"✅ Found data in table '{table_name}': {count:,} records\")\n                trips_df = spark.sql(f\"SELECT * FROM {table_name}\")\n                trips_df.createGlobalTempView(\"nw_taxi.trips\")\n                trip_count = count\n                break\n        except:\n            continue\n\nif trip_count > 0:\n    # Cache the DataFrames for better performance\n    trips_df = cache_dataframe(trips_df, \"MEMORY_AND_DISK\")\n    zones_df = cache_dataframe(zones_df, \"MEMORY_ONLY\")\n    print(\"💾 Data cached for optimized performance\")\nelse:\n    print(\"⚠️ No trip data found in Spark tables. Please ensure data is loaded into Spark first.\")\n    print(\"   You can load data using: python scripts/spark_data_processor.py\")",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_5",
+      "id": "paragraph_5",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Examine data schema and structure\nprint(\"📋 Trip Data Schema:\")\ntrips_df.printSchema()\n\nprint(\"\\n📋 Zone Data Schema:\")\nzones_df.printSchema()\n\n# Show sample data\nprint(\"\\n📊 Sample Trip Data:\")\ntrips_df.show(5, truncate=False)\n\nprint(\"\\n📍 Sample Zone Data:\")\nzones_df.show(5, truncate=False)",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_6",
+      "id": "paragraph_6",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Data quality assessment using Spark\nprint(\"🔍 Data Quality Assessment\")\nprint(\"=\" * 40)\n\n# Basic statistics\ntotal_trips = trips_df.count()\ndate_range = trips_df.select(\n    min(\"pickup_datetime\").alias(\"min_date\"),\n    max(\"pickup_datetime\").alias(\"max_date\")\n).collect()[0]\n\nprint(f\"📊 Dataset Overview:\")\nprint(f\"   Total trips: {total_trips:,}\")\nprint(f\"   Date range: {date_range['min_date']} to {date_range['max_date']}\")\n\n# Trip type distribution\ntrip_type_dist = trips_df.groupBy(\"trip_type\").count().orderBy(desc(\"count\"))\nprint(f\"\\n🚖 Trip Type Distribution:\")\ntrip_type_dist.show()\n\n# Data quality checks\nprint(\"\\n🔍 Data Quality Checks:\")\n\n# Check for nulls in critical columns\ncritical_columns = [\"pickup_datetime\", \"dropoff_datetime\", \"pickup_location_id\", \n                   \"dropoff_location_id\", \"trip_distance\", \"fare_amount\", \"total_amount\"]\n\nfor col in critical_columns:\n    null_count = trips_df.filter(trips_df[col].isNull()).count()\n    null_pct = (null_count / total_trips) * 100\n    print(f\"   {col}: {null_count:,} nulls ({null_pct:.2f}%)\")\n\n# Basic trip statistics\ntrip_stats = trips_df.select(\n    avg(\"trip_distance\").alias(\"avg_distance\"),\n    avg(\"fare_amount\").alias(\"avg_fare\"),\n    avg(\"total_amount\").alias(\"avg_total\"),\n    avg(\"tip_amount\").alias(\"avg_tip\")\n).collect()[0]\n\nprint(f\"\\n📈 Trip Statistics:\")\nprint(f\"   Average distance: {trip_stats['avg_distance']:.2f} miles\")\nprint(f\"   Average fare: ${trip_stats['avg_fare']:.2f}\")\nprint(f\"   Average total: ${trip_stats['avg_total']:.2f}\")\nprint(f\"   Average tip: ${trip_stats['avg_tip']:.2f}\")",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_7",
+      "id": "paragraph_7",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 2. Data Engineering - Feature Creation",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_8",
+      "id": "paragraph_8",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Create derived features using Spark SQL functions\nprint(\"🔧 Creating derived features...\")\n\n# Add time-based features\ntrips_enriched = trips_df.withColumn(\"pickup_hour\", hour(\"pickup_datetime\")) \\\n    .withColumn(\"pickup_day_of_week\", dayofweek(\"pickup_datetime\")) \\\n    .withColumn(\"pickup_month\", month(\"pickup_datetime\")) \\\n    .withColumn(\"pickup_year\", year(\"pickup_datetime\")) \\\n    .withColumn(\"pickup_date\", to_date(\"pickup_datetime\")) \\\n    .withColumn(\"is_weekend\", when(dayofweek(\"pickup_datetime\").isin([1, 7]), True).otherwise(False))\n\n# Add trip duration in minutes\ntrips_enriched = trips_enriched.withColumn(\n    \"trip_duration_minutes\",\n    (unix_timestamp(\"dropoff_datetime\") - unix_timestamp(\"pickup_datetime\")) / 60\n)\n\n# Add trip speed (mph)\ntrips_enriched = trips_enriched.withColumn(\n    \"trip_speed_mph\",\n    when(col(\"trip_duration_minutes\") > 0, \n         col(\"trip_distance\") / (col(\"trip_duration_minutes\") / 60))\n    .otherwise(0)\n)\n\n# Add tip percentage\ntrips_enriched = trips_enriched.withColumn(\n    \"tip_percentage\",\n    when(col(\"fare_amount\") > 0, \n         (col(\"tip_amount\") / col(\"fare_amount\")) * 100)\n    .otherwise(0)\n)\n\n# Add fare per mile\ntrips_enriched = trips_enriched.withColumn(\n    \"fare_per_mile\",\n    when(col(\"trip_distance\") > 0, \n         col(\"fare_amount\") / col(\"trip_distance\"))\n    .otherwise(0)\n)\n\n# Add time period classification\ntrips_enriched = trips_enriched.withColumn(\n    \"time_period\",\n    when((col(\"pickup_hour\") >= 7) & (col(\"pickup_hour\") <= 9), \"Morning Rush\")\n    .when((col(\"pickup_hour\") >= 17) & (col(\"pickup_hour\") <= 19), \"Evening Rush\")\n    .when((col(\"pickup_hour\") >= 10) & (col(\"pickup_hour\") <= 16), \"Daytime\")\n    .when((col(\"pickup_hour\") >= 20) & (col(\"pickup_hour\") <= 23), \"Evening\")\n    .otherwise(\"Late Night/Early Morning\")\n)\n\n# Add day name\ntrips_enriched = trips_enriched.withColumn(\n    \"day_name\",\n    when(col(\"pickup_day_of_week\") == 1, \"Sunday\")\n    .when(col(\"pickup_day_of_week\") == 2, \"Monday\")\n    .when(col(\"pickup_day_of_week\") == 3, \"Tuesday\")\n    .when(col(\"pickup_day_of_week\") == 4, \"Wednesday\")\n    .when(col(\"pickup_day_of_week\") == 5, \"Thursday\")\n    .when(col(\"pickup_day_of_week\") == 6, \"Friday\")\n    .when(col(\"pickup_day_of_week\") == 7, \"Saturday\")\n    .otherwise(\"Unknown\")\n)\n\n# Add payment method description\ntrips_enriched = trips_enriched.withColumn(\n    \"payment_method\",\n    when(col(\"payment_type\") == 1, \"Credit Card\")\n    .when(col(\"payment_type\") == 2, \"Cash\")\n    .when(col(\"payment_type\") == 3, \"No Charge\")\n    .when(col(\"payment_type\") == 4, \"Dispute\")\n    .when(col(\"payment_type\") == 5, \"Unknown\")\n    .when(col(\"payment_type\") == 6, \"Voided Trip\")\n    .otherwise(\"Other\")\n)\n\n# Filter for valid trips\nvalid_trips = trips_enriched.filter(\n    (col(\"pickup_datetime\") < col(\"dropoff_datetime\")) &\n    (col(\"trip_distance\") > 0) &\n    (col(\"trip_distance\") < 100) &\n    (col(\"fare_amount\") > 0) &\n    (col(\"total_amount\") > 0) &\n    (col(\"pickup_location_id\").isNotNull()) &\n    (col(\"dropoff_location_id\").isNotNull()) &\n    (col(\"trip_speed_mph\") >= 1) &\n    (col(\"trip_speed_mph\") <= 80)\n)\n\n# Cache the enriched dataset\nvalid_trips = cache_dataframe(valid_trips, \"MEMORY_AND_DISK\")\n\nprint(f\"✅ Feature engineering complete\")\nprint(f\"📊 Valid trips after filtering: {valid_trips.count():,}\")\nprint(f\"🔧 Added {len(trips_enriched.columns) - len(trips_df.columns)} new features\")",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_9",
+      "id": "paragraph_9",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Create temporary views for SQL analysis with nw_taxi namespace\n# Create database if it doesn't exist\nspark.sql(\"CREATE DATABASE IF NOT EXISTS nw_taxi\")\n\n# Register temporary views with namespace\nvalid_trips.createGlobalTempView(\"nw_taxi.trips\")\nzones_df.createGlobalTempView(\"nw_taxi.zones\")\nprint(\"📊 Created global temp views: nw_taxi.trips, nw_taxi.zones\")\n\n# Also create a joined view with zone information\ntrips_with_zones = valid_trips.alias(\"t\") \\\n    .join(zones_df.alias(\"pz\"), col(\"t.pickup_location_id\") == col(\"pz.location_id\"), \"left\") \\\n    .select(\n        col(\"t.*\"),\n        col(\"pz.Borough\").alias(\"pickup_borough\"),\n        col(\"pz.Zone\").alias(\"pickup_zone\")\n    ).join(zones_df.alias(\"dz\"), col(\"t.dropoff_location_id\") == col(\"dz.location_id\"), \"left\") \\\n    .select(\n        col(\"t.*\"),\n        col(\"pickup_borough\"),\n        col(\"pickup_zone\"),\n        col(\"dz.Borough\").alias(\"dropoff_borough\"),\n        col(\"dz.Zone\").alias(\"dropoff_zone\")\n    )\n\ntrips_with_zones.createGlobalTempView(\"nw_taxi.trips_with_zones\")\nprint(\"📊 Created global temp view: nw_taxi.trips_with_zones\")\n\n# Show sample of enriched data\nprint(\"\\n📊 Sample enriched data:\")\nvalid_trips.select(\n    \"pickup_datetime\", \"trip_type\", \"pickup_hour\", \"day_name\", \n    \"time_period\", \"trip_distance\", \"trip_duration_minutes\", \n    \"trip_speed_mph\", \"fare_amount\", \"tip_percentage\", \"payment_method\"\n).show(5)",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_10",
+      "id": "paragraph_10",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 3. Temporal Analysis with Spark SQL",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_11",
+      "id": "paragraph_11",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Hourly demand patterns\nSELECT \n    pickup_hour,\n    trip_type,\n    COUNT(*) as trip_count,\n    AVG(fare_amount) as avg_fare,\n    AVG(trip_distance) as avg_distance,\n    AVG(tip_percentage) as avg_tip_pct,\n    AVG(trip_speed_mph) as avg_speed\nFROM nw_taxi.trips\nGROUP BY pickup_hour, trip_type\nORDER BY pickup_hour, trip_type",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_12",
+      "id": "paragraph_12",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Daily patterns\nSELECT \n    day_name,\n    trip_type,\n    COUNT(*) as trip_count,\n    AVG(fare_amount) as avg_fare,\n    AVG(trip_distance) as avg_distance,\n    SUM(total_amount) as total_revenue\nFROM nw_taxi.trips\nGROUP BY day_name, trip_type\nORDER BY \n    CASE day_name\n        WHEN 'Monday' THEN 1\n        WHEN 'Tuesday' THEN 2\n        WHEN 'Wednesday' THEN 3\n        WHEN 'Thursday' THEN 4\n        WHEN 'Friday' THEN 5\n        WHEN 'Saturday' THEN 6\n        WHEN 'Sunday' THEN 7\n    END,\n    trip_type",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_13",
+      "id": "paragraph_13",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Peak hours identification\nSELECT \n    pickup_hour,\n    SUM(CASE WHEN trip_type = 'yellow' THEN 1 ELSE 0 END) as yellow_trips,\n    SUM(CASE WHEN trip_type = 'green' THEN 1 ELSE 0 END) as green_trips,\n    COUNT(*) as total_trips,\n    AVG(fare_amount) as avg_fare\nFROM nw_taxi.trips\nGROUP BY pickup_hour\nORDER BY total_trips DESC\nLIMIT 10",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_14",
+      "id": "paragraph_14",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 4. Geographic Analysis with Distributed Processing",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_15",
+      "id": "paragraph_15",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Borough-level analysis\nSELECT \n    pickup_borough,\n    trip_type,\n    COUNT(*) as trip_count,\n    AVG(fare_amount) as avg_fare,\n    AVG(trip_distance) as avg_distance,\n    AVG(tip_percentage) as avg_tip_pct,\n    SUM(total_amount) as total_revenue,\n    AVG(trip_speed_mph) as avg_speed\nFROM nw_taxi.trips_with_zones\nWHERE pickup_borough IS NOT NULL\nGROUP BY pickup_borough, trip_type\nORDER BY trip_count DESC",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_16",
+      "id": "paragraph_16",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Top pickup zones\nSELECT \n    pickup_zone,\n    pickup_borough,\n    COUNT(*) as trip_count,\n    AVG(fare_amount) as avg_fare,\n    SUM(total_amount) as total_revenue,\n    AVG(trip_distance) as avg_distance\nFROM nw_taxi.trips_with_zones\nWHERE pickup_zone IS NOT NULL\nGROUP BY pickup_zone, pickup_borough\nORDER BY trip_count DESC\nLIMIT 20",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_17",
+      "id": "paragraph_17",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 5. Payment and Pricing Analysis at Scale",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_18",
+      "id": "paragraph_18",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Payment method analysis\nSELECT \n    payment_method,\n    trip_type,\n    COUNT(*) as trip_count,\n    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY trip_type), 2) as pct_of_type,\n    AVG(fare_amount) as avg_fare,\n    AVG(tip_amount) as avg_tip,\n    AVG(tip_percentage) as avg_tip_pct,\n    PERCENTILE_APPROX(tip_percentage, 0.5) as median_tip_pct,\n    SUM(total_amount) as total_revenue\nFROM nw_taxi.trips\nGROUP BY payment_method, trip_type\nORDER BY trip_type, trip_count DESC",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_19",
+      "id": "paragraph_19",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 6. Advanced Analytics with Spark SQL",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_20",
+      "id": "paragraph_20",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Monthly trends with growth calculation\nWITH monthly_stats AS (\n    SELECT \n        pickup_year,\n        pickup_month,\n        trip_type,\n        COUNT(*) as total_trips,\n        SUM(total_amount) as total_revenue,\n        AVG(fare_amount) as avg_fare,\n        AVG(trip_distance) as avg_distance\n    FROM nw_taxi.trips\n    GROUP BY pickup_year, pickup_month, trip_type\n)\nSELECT \n    pickup_year,\n    pickup_month,\n    trip_type,\n    total_trips,\n    total_revenue,\n    avg_fare,\n    avg_distance,\n    LAG(total_trips) OVER (\n        PARTITION BY trip_type \n        ORDER BY pickup_year, pickup_month\n    ) as prev_month_trips,\n    ROUND(\n        (total_trips - LAG(total_trips) OVER (\n            PARTITION BY trip_type \n            ORDER BY pickup_year, pickup_month\n        )) * 100.0 / LAG(total_trips) OVER (\n            PARTITION BY trip_type \n            ORDER BY pickup_year, pickup_month\n        ), 2\n    ) as month_over_month_growth_pct\nFROM monthly_stats\nORDER BY pickup_year, pickup_month, trip_type",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_21",
+      "id": "paragraph_21",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## 7. Business Intelligence Summary Dashboard",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_22",
+      "id": "paragraph_22",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Executive summary metrics\nSELECT \n    'Overall Performance' as metric_category,\n    COUNT(*) as total_trips,\n    ROUND(SUM(total_amount), 2) as total_revenue,\n    ROUND(AVG(fare_amount), 2) as avg_fare,\n    ROUND(AVG(trip_distance), 2) as avg_distance,\n    ROUND(AVG(tip_percentage), 2) as avg_tip_pct,\n    COUNT(DISTINCT pickup_location_id) as unique_pickup_zones,\n    COUNT(DISTINCT dropoff_location_id) as unique_dropoff_zones,\n    ROUND(AVG(trip_speed_mph), 2) as avg_speed_mph\nFROM nw_taxi.trips",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_23",
+      "id": "paragraph_23",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%sql\n-- Market share analysis\nSELECT \n    trip_type,\n    COUNT(*) as trip_count,\n    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as trip_market_share_pct,\n    ROUND(SUM(total_amount), 2) as total_revenue,\n    ROUND(SUM(total_amount) * 100.0 / SUM(SUM(total_amount)) OVER (), 2) as revenue_market_share_pct,\n    ROUND(AVG(fare_amount), 2) as avg_fare,\n    ROUND(AVG(trip_distance), 2) as avg_distance,\n    ROUND(AVG(tip_percentage), 2) as avg_tip_pct\nFROM nw_taxi.trips\nGROUP BY trip_type\nORDER BY trip_count DESC",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "sql",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/sql"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_24",
+      "id": "paragraph_24",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%pyspark\n# Optional: Save processed data for future analysis\nprint(\"💾 Saving processed data for future use...\")\n\n# Save enriched dataset (partitioned by trip_type for optimal access)\ntry:\n    output_path = \"../data/processed/nyc_taxi_enriched_spark\"\n    valid_trips.write.mode(\"overwrite\").partitionBy(\"trip_type\").parquet(output_path)\n    print(f\"✅ Enriched data saved to: {output_path}\")\nexcept Exception as e:\n    print(f\"⚠️ Could not save data: {e}\")\n\n# Unpersist cached DataFrames to free memory\nvalid_trips.unpersist()\ntrips_df.unpersist()\nzones_df.unpersist()\n\nprint(\"🧹 Cache cleared\")\n\nprint(\"\\n✅ NYC Taxi Big Data Analysis Complete!\")\nprint(\"🌐 Spark UI: Check the provided URL for detailed job execution metrics\")\nprint(\"📊 All analytics performed using distributed Spark processing\")\nprint(\"\\n🚀 Spark session is still active for additional analysis\")\nprint(\"💡 Use spark.stop() when you're completely done\")",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "python",
+          "editOnDblClick": false
+        },
+        "editorMode": "ace/mode/python"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_25",
+      "id": "paragraph_25",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    },
+    {
+      "text": "%md\n## Key Advantages of PySpark for NYC Taxi Analysis\n\n### 🚀 **Scalability Benefits**\n- **Distributed Processing**: Handle datasets too large for single-machine memory\n- **Horizontal Scaling**: Add more cores/machines as data grows\n- **Lazy Evaluation**: Optimizes query execution plans automatically\n\n### ⚡ **Performance Optimizations**\n- **In-Memory Caching**: Keep frequently accessed data in RAM\n- **Columnar Storage**: Efficient parquet reading/writing\n- **Catalyst Optimizer**: Automatic SQL query optimization\n- **Code Generation**: JIT compilation for faster execution\n\n### 🔧 **Advanced Analytics Capabilities**\n- **Window Functions**: Complex time-series and ranking operations\n- **Built-in ML**: MLlib for machine learning at scale\n- **Streaming**: Real-time processing capabilities\n- **Graph Processing**: Network analysis with GraphX\n\n### 📊 **Big Data Integration**\n- **Multiple Formats**: Parquet, JSON, CSV, Delta Lake\n- **Database Connectivity**: JDBC connections to data warehouses\n- **Cloud Integration**: Native support for S3, HDFS, Azure, GCS\n- **Kafka Integration**: Real-time streaming from message queues\n\n### 💼 **Production Ready**\n- **Fault Tolerance**: Automatic recovery from node failures\n- **Resource Management**: Dynamic resource allocation\n- **Monitoring**: Rich metrics and debugging tools\n- **Security**: Encryption, authentication, and authorization\n\n---\n\n**Next Steps**: \n- Scale to full historical dataset (years of data)\n- Implement machine learning models for demand prediction\n- Set up streaming analytics for real-time insights\n- Deploy on cloud clusters for enterprise-scale analysis",
+      "user": "anonymous",
+      "dateUpdated": "2025-01-14T10:00:00+0000",
+      "config": {
+        "colWidth": 12.0,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true
+        },
+        "editorMode": "ace/mode/markdown"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "jobName": "paragraph_26",
+      "id": "paragraph_26",
+      "dateCreated": "2025-01-14T10:00:00+0000",
+      "status": "READY",
+      "progressUpdateIntervalMs": 500
+    }
+  ],
+  "name": "NYC Taxi Data Analysis with PySpark",
+  "id": "2JVWN4M8K",
+  "defaultInterpreterGroup": "spark",
+  "version": "0.10.0",
+  "noteParams": {},
+  "noteForms": {},
+  "angularObjects": {},
+  "config": {
+    "isZeppelinNotebookCronEnable": false
+  },
+  "info": {
+    "isRunning": false
+  }
+}
